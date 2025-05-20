@@ -15,6 +15,36 @@ import (
 
 var token, channel, username string
 
+var CmdMap = make(map[string]string)
+
+// load les valeurs du csv dans la map (hash table)
+func loadMap(){
+
+	file, err := os.Open("dic.csv")
+	if err != nil {
+		panic(err)
+	}
+
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = 2
+	data, err := reader.ReadAll()
+	if err != nil {
+		panic(err)
+	}
+	
+	for i, line := range data {
+		if i == 0 {
+			continue // on skip le header
+		}
+		tempCmd := line[0]
+		tempMsg := line[1]
+
+		CmdMap[tempCmd] = tempMsg
+	}
+}
+
 func init() {
 	err := godotenv.Load()
 	if err != nil {
@@ -28,6 +58,7 @@ func init() {
 	if token == "" || username == "" || channel == "" {
 		log.Fatal("Probleme lors de la reception des variables d'environement")
 	}
+	loadMap()
 }
 
 func connect() net.Conn {
@@ -35,10 +66,6 @@ func connect() net.Conn {
 	if err != nil {
 		panic(err)
 	}
-
-	fmt.Println("Token:", token)
-	fmt.Println("Username:", username)
-	fmt.Println("Channel:", channel)
 
 	fmt.Fprintf(conn, "PASS %s\r\n", token)
 	fmt.Fprintf(conn, "NICK %s\r\n", username)
@@ -56,40 +83,13 @@ func sendMessage(conn net.Conn, message string) {
 }
 
 func processMSG(conn net.Conn, message string) {
-	type messageHandle struct {
-		cmd string
-		msg string
+	if response, ok := CmdMap[message]; ok {
+    sendMessage(conn, response)
 	}
-
-	file, err := os.Open("dic.csv")
-	if err != nil {
-		panic(err)
-	}
-
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	reader.FieldsPerRecord = 2
-	data, err := reader.ReadAll()
-	if err != nil {
-		panic(err)
-	}
-
-	for i, line := range data {
-		if i > 0 {
-			var msgH messageHandle
-			for j, field := range line {
-				if j == 0 {
-					msgH.cmd = field
-				}
-				if j == 1 {
-					msgH.msg = field
-				}
-				if message == msgH.cmd {
-					sendMessage(conn, msgH.msg)
-				}
-			}
-		}
+	if message == "!exit" {
+		disconnect(conn)
+		log.Println("Exit du programme via intervention de l'utilisateur")
+		os.Exit(0)
 	}
 }
 
@@ -100,13 +100,18 @@ func main() {
 	defer disconnect(conn)
 
 	tp := textproto.NewReader(bufio.NewReader(conn))
-	for {
+	for { // boucle infinie
 		status, err := tp.ReadLine()
+		
 		if err != nil {
 			panic(err)
 		}
 		fmt.Println(status)
 
+		if strings.HasPrefix(status, "PING") {
+			fmt.Fprintf(conn, "PONG :tmi.twitch.tv\r\n")
+		}
+		
 		if strings.Contains(status, "PRIVMSG") {
 			messageParts := strings.Split(status, " :")
 			if len(messageParts) > 1 {
@@ -115,5 +120,5 @@ func main() {
 			}
 		}
 	}
-
+	log.Println("Fin du programme")
 }
