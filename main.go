@@ -19,7 +19,6 @@ var CmdMap = make(map[string]string)
 
 // load les valeurs du csv dans la map (hash table)
 func loadMap(){
-
 	file, err := os.Open("dic.csv")
 	if err != nil {
 		panic(err)
